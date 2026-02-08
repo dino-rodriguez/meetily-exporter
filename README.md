@@ -1,5 +1,7 @@
 # Meetily Exporter
 
+[![tests](https://github.com/dino-rodriguez/meetily-exporter/actions/workflows/test.yml/badge.svg)](https://github.com/dino-rodriguez/meetily-exporter/actions/workflows/test.yml)
+
 A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) as portable markdown files. **macOS only.**
 
 ## Table of contents
