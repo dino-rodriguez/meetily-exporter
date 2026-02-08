@@ -6,13 +6,19 @@ A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-So
 
 ## Table of contents
 
+- [How it works](#how-it-works)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
   - [Export](#export)
   - [Watch](#watch)
-- [How it works](#how-it-works)
 - [Output format](#output-format)
+
+## How it works
+
+[Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) is an open-source, local-first meeting assistant that records audio, transcribes it, and generates AI summaries — all stored in a local SQLite database.
+
+This tool reads that database (read-only) and for each meeting with a completed summary, builds a markdown file containing YAML front matter, the AI summary, and a timestamped transcript with speaker labels.
 
 ## Requirements
 
@@ -95,12 +101,6 @@ brew services info meetily-exporter    # check status
 | `--output` | Output directory | `~/Documents/MeetilyExporter` |
 | `--db` | Meetily SQLite database | Meetily's default location |
 | `--interval` | Poll interval in seconds | 30 |
-
-## How it works
-
-[Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) is an open-source, local-first meeting assistant that records audio, transcribes it, and generates AI summaries — all stored in a local SQLite database.
-
-This tool reads that database (read-only) and for each meeting with a completed summary, builds a markdown file containing YAML front matter, the AI summary, and a timestamped transcript with speaker labels.
 
 ## Output format
 
