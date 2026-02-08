@@ -1,5 +1,5 @@
 test:
-	uv run python -m unittest discover tests -v
+	uv run python -m unittest discover tests -v -b
 
 lint:
 	uv run ruff check .

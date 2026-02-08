@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sqlite3
+import subprocess
 import time
 
 DEFAULT_DB = os.path.expanduser(
@@ -13,6 +14,26 @@ SPEAKER_LABELS = {"mic": "You", "system": "Others"}
 # Row types from SQL queries
 type MeetingRow = tuple[str, str, str, str | None]  # id, title, created_at, result
 type TranscriptRow = tuple[str, float | None, str, str | None]  # transcript, audio_start, timestamp, speaker
+
+
+def notify(title: str, message: str) -> None:
+    """Show a native macOS notification via osascript.
+
+    Silently ignored if osascript is unavailable or times out.
+
+    Args:
+        title: Notification title.
+        message: Notification body text.
+    """
+    try:
+        subprocess.run(
+            ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
+            capture_output=True,
+            timeout=2,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
 
 
 def get_db_path(args: argparse.Namespace) -> str:
@@ -194,6 +215,8 @@ def export_all(
         export_meeting(m, db, output_dir, force) for m in meetings
     )
     print(f"Exported {exported} meeting(s)")
+    if exported:
+        notify("Recap", f"Exported {exported} meeting(s)")
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -258,7 +281,8 @@ def cmd_watch(args: argparse.Namespace) -> None:
         db = sqlite3.connect(db_path)
         meetings = get_meetings(db, since=cursor)
         for meeting in meetings:
-            export_meeting(meeting, db, args.output, force=False)
+            if export_meeting(meeting, db, args.output, force=False):
+                notify("Recap", f"New meeting exported: {meeting[1]}")
         if meetings:
             cursor = get_latest_cursor(db)
         db.close()

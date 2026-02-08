@@ -1,15 +1,18 @@
 import json
 import os
 import sqlite3
+import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from main import (
     export_all,
     export_meeting,
     get_latest_cursor,
     get_meetings,
+    notify,
 )
 
 
@@ -62,6 +65,7 @@ def create_test_db(path: str) -> sqlite3.Connection:
     return db
 
 
+@patch("main.notify")
 class TestExport(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -73,12 +77,12 @@ class TestExport(unittest.TestCase):
         self.db.close()
         self.tmp.cleanup()
 
-    def test_export_all(self):
+    def test_export_all(self, _notify):
         export_all(self.db, self.output)
         files = sorted(os.listdir(self.output))
         self.assertEqual(files, ["meeting-aaa.md", "meeting-bbb.md"])
 
-    def test_skip_existing(self):
+    def test_skip_existing(self, _notify):
         export_all(self.db, self.output)
         mtime = os.path.getmtime(os.path.join(self.output, "meeting-aaa.md"))
 
@@ -87,7 +91,7 @@ class TestExport(unittest.TestCase):
             os.path.getmtime(os.path.join(self.output, "meeting-aaa.md")), mtime
         )
 
-    def test_force_overwrite(self):
+    def test_force_overwrite(self, _notify):
         export_all(self.db, self.output)
         path = os.path.join(self.output, "meeting-aaa.md")
         mtime = os.path.getmtime(path)
@@ -96,15 +100,15 @@ class TestExport(unittest.TestCase):
         export_all(self.db, self.output, force=True)
         self.assertGreater(os.path.getmtime(path), mtime)
 
-    def test_single_meeting_id(self):
+    def test_single_meeting_id(self, _notify):
         export_all(self.db, self.output, meeting_id="meeting-bbb")
         self.assertEqual(os.listdir(self.output), ["meeting-bbb.md"])
 
-    def test_nonexistent_meeting_id(self):
+    def test_nonexistent_meeting_id(self, _notify):
         export_all(self.db, self.output, meeting_id="meeting-zzz")
         self.assertFalse(os.path.exists(self.output))
 
-    def test_markdown_content(self):
+    def test_markdown_content(self, _notify):
         meetings = get_meetings(self.db)
         meeting_aaa = next(m for m in meetings if m[0] == "meeting-aaa")
         export_meeting(meeting_aaa, self.db, self.output, force=False)
@@ -120,6 +124,7 @@ class TestExport(unittest.TestCase):
         self.assertIn("[00:05] (Others) Hi lets get started", content)
 
 
+@patch("main.notify")
 class TestWatchCursor(unittest.TestCase):
     """Test the cursor-based polling mechanism used by watch."""
 
@@ -133,20 +138,20 @@ class TestWatchCursor(unittest.TestCase):
         self.db.close()
         self.tmp.cleanup()
 
-    def test_cursor_returns_latest_updated_at(self):
+    def test_cursor_returns_latest_updated_at(self, _notify):
         cursor = get_latest_cursor(self.db)
         self.assertEqual(cursor, "2025-01-07T14:45:00")
 
-    def test_since_filters_old_meetings(self):
+    def test_since_filters_old_meetings(self, _notify):
         meetings = get_meetings(self.db, since="2025-01-07T14:45:00")
         self.assertEqual(len(meetings), 0)
 
-    def test_since_returns_only_newer(self):
+    def test_since_returns_only_newer(self, _notify):
         meetings = get_meetings(self.db, since="2025-01-06T09:30:00")
         self.assertEqual(len(meetings), 1)
         self.assertEqual(meetings[0][0], "meeting-bbb")
 
-    def test_new_meeting_picked_up_after_cursor(self):
+    def test_new_meeting_picked_up_after_cursor(self, _notify):
         export_all(self.db, self.output)
         cursor = get_latest_cursor(self.db)
         self.assertEqual(len(os.listdir(self.output)), 2)
@@ -171,6 +176,26 @@ class TestWatchCursor(unittest.TestCase):
         new_cursor = get_latest_cursor(self.db)
         self.assertEqual(new_cursor, "2025-01-08T17:00:00")
         self.assertGreater(new_cursor, cursor)
+
+
+class TestNotify(unittest.TestCase):
+    @patch("main.subprocess.run")
+    def test_calls_osascript(self, mock_run):
+        notify("Recap", "Exported 2 meeting(s)")
+        mock_run.assert_called_once_with(
+            ["osascript", "-e", 'display notification "Exported 2 meeting(s)" with title "Recap"'],
+            capture_output=True,
+            timeout=2,
+            check=False,
+        )
+
+    @patch("main.subprocess.run", side_effect=FileNotFoundError)
+    def test_ignores_missing_osascript(self, _mock_run):
+        notify("Recap", "test")  # should not raise
+
+    @patch("main.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="", timeout=2))
+    def test_ignores_timeout(self, _mock_run):
+        notify("Recap", "test")  # should not raise
 
 
 if __name__ == "__main__":
