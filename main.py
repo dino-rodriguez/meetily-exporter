@@ -8,6 +8,7 @@ import time
 DEFAULT_DB = os.path.expanduser(
     "~/Library/Application Support/com.meetily.ai/meeting_minutes.sqlite"
 )
+DEFAULT_OUTPUT = os.path.expanduser("~/Documents/Recap")
 DEFAULT_INTERVAL = 30
 SPEAKER_LABELS = {"mic": "You", "system": "Others"}
 
@@ -298,13 +299,13 @@ def main() -> None:
 
     export_p = sub.add_parser("export", help="Export meetings")
     export_p.add_argument(*db_arg["flags"], help=db_arg["help"])
-    export_p.add_argument("--output", required=True, help="Output directory")
+    export_p.add_argument("--output", default=DEFAULT_OUTPUT, help="Output directory")
     export_p.add_argument("--meeting-id", help="Export a specific meeting")
     export_p.add_argument("--force", action="store_true", help="Overwrite existing files")
 
     watch_p = sub.add_parser("watch", help="Watch for new meetings")
     watch_p.add_argument(*db_arg["flags"], help=db_arg["help"])
-    watch_p.add_argument("--output", required=True, help="Output directory")
+    watch_p.add_argument("--output", default=DEFAULT_OUTPUT, help="Output directory")
     watch_p.add_argument(
         "--interval", type=int, default=DEFAULT_INTERVAL, help="Poll interval in seconds"
     )
