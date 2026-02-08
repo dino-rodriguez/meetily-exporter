@@ -1,13 +1,21 @@
 # Meetily Exporter
 
-A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) as markdown files. **macOS only.**
+A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) as portable markdown files. **macOS only.**
 
-[Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) is an open-source, local-first meeting assistant that records audio, transcribes it, and generates AI summaries. The summaries and transcripts are stored in its internal SQLite database. This tool reads that database (read-only) and exports meetings as clean, portable markdown files you can use anywhere.
+## Table of contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Export](#export)
+  - [Watch](#watch)
+- [How it works](#how-it-works)
+- [Output format](#output-format)
 
 ## Requirements
 
-- [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) installed with at least one meeting that has a completed summary (transcription alone is not enough — Meetily must finish generating the summary)
-- macOS (uses Meetily's macOS database path and native notifications)
+- [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) installed with at least one completed summary
+- macOS
 - Python 3.12+
 
 ## Installation
@@ -86,6 +94,12 @@ brew services info meetily-exporter    # check status
 | `--db` | Meetily SQLite database | Meetily's default location |
 | `--interval` | Poll interval in seconds | 30 |
 
+## How it works
+
+[Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) is an open-source, local-first meeting assistant that records audio, transcribes it, and generates AI summaries — all stored in a local SQLite database.
+
+This tool reads that database (read-only) and for each meeting with a completed summary, builds a markdown file containing YAML front matter, the AI summary, and a timestamped transcript with speaker labels.
+
 ## Output format
 
 Each meeting becomes a markdown file named by its meeting ID:
@@ -98,16 +112,19 @@ meeting-id: meeting-fa7efe8b-c721-4396-8630-20d91fdcd1aa
 
 ## Summary
 
+The team reviewed the latest mockups for the dashboard redesign...
+
 ## Action Items
-- Update color palette
+- Update color palette based on brand guidelines
 - Schedule follow-up with design team
 
 ---
 
 ## Transcript
 
-[00:00] (You) Let's look at the mockups
-[00:12] (Others) I like option B
+[00:00] (You) Let's look at the mockups for the dashboard
+[00:12] (Others) I think option B is the strongest
+[00:25] (You) Agreed, let's go with that direction
 ```
 
 The YAML front matter includes the meeting title, which works with the [Obsidian Front Matter Title](https://github.com/snezhig/obsidian-front-matter-title) plugin if you point your output directory to an Obsidian vault.

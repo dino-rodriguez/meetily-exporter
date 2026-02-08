@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import time
 
 DEFAULT_DB = os.path.expanduser(
@@ -292,6 +293,9 @@ def cmd_watch(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Entry point. Parses CLI arguments and dispatches to export or watch."""
+    # Disable stdout buffering so logs flush immediately when running as a service
+    sys.stdout.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(prog="meetily-exporter", description="Export Meetily meetings as markdown")
     sub = parser.add_subparsers(dest="command", required=True)
 
