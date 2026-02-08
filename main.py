@@ -5,12 +5,14 @@ import sqlite3
 import subprocess
 import sys
 import time
+import tomllib
 
 DEFAULT_DB = os.path.expanduser(
     "~/Library/Application Support/com.meetily.ai/meeting_minutes.sqlite"
 )
 DEFAULT_OUTPUT = os.path.expanduser("~/Documents/MeetilyExporter")
 DEFAULT_INTERVAL = 30
+CONFIG_PATH = os.path.expanduser("~/.config/meetily-exporter/config.toml")
 SPEAKER_LABELS = {"mic": "You", "system": "Others"}
 
 # Row types from SQL queries
@@ -38,9 +40,61 @@ def notify(title: str, message: str) -> None:
         pass
 
 
-def get_db_path(args: argparse.Namespace) -> str:
-    """Resolve the database path from args or fall back to the default macOS location."""
-    return args.db if args.db else DEFAULT_DB
+def load_config(path: str = CONFIG_PATH) -> dict[str, str | int]:
+    """Read the config file and return its contents as a dict.
+
+    Args:
+        path: Path to the TOML config file.
+
+    Returns:
+        Parsed config dict, or empty dict if the file doesn't exist.
+    """
+    if not os.path.exists(path):
+        return {}
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def save_config(config: dict[str, str | int], path: str = CONFIG_PATH) -> None:
+    """Write the config dict to a TOML file.
+
+    Creates the parent directory if it doesn't exist.
+
+    Args:
+        config: Config key-value pairs to write.
+        path: Path to the TOML config file.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lines = []
+    for key, value in config.items():
+        if isinstance(value, int):
+            lines.append(f"{key} = {value}")
+        else:
+            lines.append(f'{key} = "{value}"')
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def resolve_args(args: argparse.Namespace) -> None:
+    """Fill in unset CLI args from the config file, then from built-in defaults.
+
+    Modifies args in place. Resolution order: CLI flag > config file > default.
+
+    Args:
+        args: Parsed CLI arguments. None values are treated as "not provided".
+    """
+    config = load_config()
+    defaults = {"output": DEFAULT_OUTPUT, "db": DEFAULT_DB, "interval": DEFAULT_INTERVAL}
+
+    for key, default in defaults.items():
+        if not hasattr(args, key):
+            continue
+        val = getattr(args, key)
+        if val is None:
+            val = config.get(key, default)
+            if isinstance(default, str) and isinstance(val, str):
+                val = os.path.expanduser(val)
+            setattr(args, key, val)
 
 
 def get_meetings(
@@ -222,18 +276,52 @@ def export_all(
         notify("Meetily Exporter", f"Exported {exported} {label}")
 
 
+def cmd_config(args: argparse.Namespace) -> None:
+    """Handle the 'config' subcommand.
+
+    With flags, updates the config file. Always prints the current effective
+    configuration showing where each value comes from.
+
+    Args:
+        args: Parsed CLI arguments including optional output, db, and interval.
+    """
+    config = load_config()
+    changed = False
+
+    for key in ("output", "db", "interval"):
+        val = getattr(args, key, None)
+        if val is not None:
+            config[key] = val
+            changed = True
+
+    if changed:
+        save_config(config)
+        print(f"Config saved to {CONFIG_PATH}")
+
+    defaults = {"output": DEFAULT_OUTPUT, "db": DEFAULT_DB, "interval": DEFAULT_INTERVAL}
+    print("\nCurrent settings:")
+    for key, default in defaults.items():
+        if key in config:
+            val = config[key]
+            if isinstance(val, str):
+                val = os.path.expanduser(val)
+            print(f"  {key} = {val} (from config)")
+        else:
+            print(f"  {key} = {default} (default)")
+
+
 def cmd_export(args: argparse.Namespace) -> None:
     """Handle the 'export' subcommand.
 
     Args:
         args: Parsed CLI arguments including output, meeting_id, and force.
     """
-    db_path = get_db_path(args)
-    if not os.path.exists(db_path):
-        print(f"Database not found: {db_path}")
+    resolve_args(args)
+    if not os.path.exists(args.db):
+        print(f"Database not found: {args.db}")
         raise SystemExit(1)
 
-    db = sqlite3.connect(db_path)
+    db = sqlite3.connect(args.db)
     export_all(db, args.output, args.force, args.meeting_id)
     db.close()
 
@@ -262,12 +350,12 @@ def cmd_watch(args: argparse.Namespace) -> None:
     Args:
         args: Parsed CLI arguments including output and interval.
     """
-    db_path = get_db_path(args)
-    if not os.path.exists(db_path):
-        print(f"Database not found: {db_path}")
+    resolve_args(args)
+    if not os.path.exists(args.db):
+        print(f"Database not found: {args.db}")
         raise SystemExit(1)
 
-    db = sqlite3.connect(db_path)
+    db = sqlite3.connect(args.db)
 
     # Initial bulk export
     print(f"Watching for new meetings (every {args.interval}s)...")
@@ -281,7 +369,7 @@ def cmd_watch(args: argparse.Namespace) -> None:
     # Poll loop — only fetch meetings newer than cursor
     while True:
         time.sleep(args.interval)
-        db = sqlite3.connect(db_path)
+        db = sqlite3.connect(args.db)
         meetings = get_meetings(db, since=cursor)
         for meeting in meetings:
             if export_meeting(meeting, db, args.output, force=False):
@@ -299,26 +387,29 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="meetily-exporter", description="Export Meetily meetings as markdown")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    db_arg = {"flags": ["--db"], "help": "Path to Meetily SQLite database"}
-
     export_p = sub.add_parser("export", help="Export meetings")
-    export_p.add_argument(*db_arg["flags"], help=db_arg["help"])
-    export_p.add_argument("--output", default=DEFAULT_OUTPUT, help="Output directory")
+    export_p.add_argument("--db", help="Path to Meetily SQLite database")
+    export_p.add_argument("--output", help="Output directory")
     export_p.add_argument("--meeting-id", help="Export a specific meeting")
     export_p.add_argument("--force", action="store_true", help="Overwrite existing files")
 
     watch_p = sub.add_parser("watch", help="Watch for new meetings")
-    watch_p.add_argument(*db_arg["flags"], help=db_arg["help"])
-    watch_p.add_argument("--output", default=DEFAULT_OUTPUT, help="Output directory")
-    watch_p.add_argument(
-        "--interval", type=int, default=DEFAULT_INTERVAL, help="Poll interval in seconds"
-    )
+    watch_p.add_argument("--db", help="Path to Meetily SQLite database")
+    watch_p.add_argument("--output", help="Output directory")
+    watch_p.add_argument("--interval", type=int, help="Poll interval in seconds")
+
+    config_p = sub.add_parser("config", help="View or update settings")
+    config_p.add_argument("--db", help="Set default database path")
+    config_p.add_argument("--output", help="Set default output directory")
+    config_p.add_argument("--interval", type=int, help="Set default poll interval")
 
     args = parser.parse_args()
     if args.command == "export":
         cmd_export(args)
     elif args.command == "watch":
         cmd_watch(args)
+    elif args.command == "config":
+        cmd_config(args)
 
 
 if __name__ == "__main__":

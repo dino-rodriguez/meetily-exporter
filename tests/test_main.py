@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sqlite3
@@ -8,11 +9,17 @@ import unittest
 from unittest.mock import patch
 
 from main import (
+    DEFAULT_DB,
+    DEFAULT_INTERVAL,
+    DEFAULT_OUTPUT,
     export_all,
     export_meeting,
     get_latest_cursor,
     get_meetings,
+    load_config,
     notify,
+    resolve_args,
+    save_config,
 )
 
 
@@ -186,6 +193,58 @@ class TestWatchCursor(unittest.TestCase):
         new_cursor = get_latest_cursor(self.db)
         self.assertEqual(new_cursor, "2025-01-08T17:00:00")
         self.assertGreater(new_cursor, cursor)
+
+
+class TestConfig(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config_path = os.path.join(self.tmp.name, "config.toml")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_load_missing_file(self):
+        config = load_config(os.path.join(self.tmp.name, "nonexistent.toml"))
+        self.assertEqual(config, {})
+
+    def test_save_and_load(self):
+        save_config({"output": "/tmp/meetings", "interval": 60}, self.config_path)
+        config = load_config(self.config_path)
+        self.assertEqual(config["output"], "/tmp/meetings")
+        self.assertEqual(config["interval"], 60)
+
+    def test_save_creates_parent_dirs(self):
+        nested = os.path.join(self.tmp.name, "a", "b", "config.toml")
+        save_config({"output": "/tmp/test"}, nested)
+        self.assertTrue(os.path.exists(nested))
+
+    def test_resolve_uses_defaults_when_no_config(self):
+        args = argparse.Namespace(output=None, db=None, interval=None)
+        with patch("main.load_config", return_value={}):
+            resolve_args(args)
+        self.assertEqual(args.output, DEFAULT_OUTPUT)
+        self.assertEqual(args.db, DEFAULT_DB)
+        self.assertEqual(args.interval, DEFAULT_INTERVAL)
+
+    def test_resolve_config_overrides_default(self):
+        args = argparse.Namespace(output=None, db=None, interval=None)
+        with patch("main.load_config", return_value={"output": "/custom/path", "interval": 10}):
+            resolve_args(args)
+        self.assertEqual(args.output, "/custom/path")
+        self.assertEqual(args.interval, 10)
+        self.assertEqual(args.db, DEFAULT_DB)  # still default
+
+    def test_resolve_flag_overrides_config(self):
+        args = argparse.Namespace(output="/flag/path", db=None, interval=None)
+        with patch("main.load_config", return_value={"output": "/config/path"}):
+            resolve_args(args)
+        self.assertEqual(args.output, "/flag/path")
+
+    def test_resolve_expands_tilde_from_config(self):
+        args = argparse.Namespace(output=None, db=None, interval=None)
+        with patch("main.load_config", return_value={"output": "~/meetings"}):
+            resolve_args(args)
+        self.assertEqual(args.output, os.path.expanduser("~/meetings"))
 
 
 class TestNotify(unittest.TestCase):

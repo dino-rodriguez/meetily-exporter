@@ -10,6 +10,7 @@ A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-So
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Config](#config)
   - [Export](#export)
   - [Watch](#watch)
 - [Output format](#output-format)
@@ -28,7 +29,7 @@ This tool reads that database (read-only) and for each meeting with a completed 
 
 ## Installation
 
-### Homebrew
+### Homebrew (recommended)
 
 ```bash
 brew tap dino-rodriguez/meetily-exporter https://github.com/dino-rodriguez/meetily-exporter
@@ -58,6 +59,24 @@ uv run meetily-exporter --help
 
 ## Usage
 
+### Config
+
+Set persistent defaults that apply to all commands, including `brew services`:
+
+```bash
+meetily-exporter config                              # show current settings
+meetily-exporter config --output ~/Obsidian/Meetings # set output directory
+meetily-exporter config --interval 60                # set poll interval
+```
+
+Settings are stored in `~/.config/meetily-exporter/config.toml`. CLI flags always override config values.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--output` | Default output directory | `~/Documents/MeetilyExporter` |
+| `--db` | Default Meetily SQLite database | Meetily's default location |
+| `--interval` | Default poll interval in seconds | 30 |
+
 ### Export
 
 ```bash
@@ -68,6 +87,13 @@ meetily-exporter export --meeting-id <id>  # export a single meeting
 
 Exports all meetings with completed summaries to `~/Documents/MeetilyExporter`. Existing files are skipped unless `--force` is used.
 
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--output` | Output directory | `~/Documents/MeetilyExporter` |
+| `--db` | Meetily SQLite database | Meetily's default location |
+| `--meeting-id` | Export a single meeting | All |
+| `--force` | Overwrite existing files | Off |
+
 ### Watch
 
 ```bash
@@ -77,6 +103,12 @@ meetily-exporter watch --interval 60   # custom poll interval
 
 Continuously polls for newly completed meetings and exports them. A macOS notification appears when a meeting is exported.
 
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--output` | Output directory | `~/Documents/MeetilyExporter` |
+| `--db` | Meetily SQLite database | Meetily's default location |
+| `--interval` | Poll interval in seconds | 30 |
+
 To run the watcher as a persistent background service that starts on login (Homebrew only):
 
 ```bash
@@ -85,22 +117,7 @@ brew services stop meetily-exporter    # stop
 brew services info meetily-exporter    # check status
 ```
 
-### Export options
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--output` | Output directory | `~/Documents/MeetilyExporter` |
-| `--db` | Meetily SQLite database | Meetily's default location |
-| `--meeting-id` | Export a single meeting | All |
-| `--force` | Overwrite existing files | Off |
-
-### Watch options
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--output` | Output directory | `~/Documents/MeetilyExporter` |
-| `--db` | Meetily SQLite database | Meetily's default location |
-| `--interval` | Poll interval in seconds | 30 |
+Use `meetily-exporter config --output <dir>` to customize where the service writes files.
 
 ## Output format
 
