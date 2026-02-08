@@ -2,7 +2,7 @@
 
 ## Project
 
-Recap is a standalone Python CLI that reads Meetily's SQLite database and exports meetings as markdown files.
+Meetily Exporter is a standalone Python CLI that reads Meetily's SQLite database and exports meetings as markdown files.
 
 ## Python Style
 

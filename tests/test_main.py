@@ -84,7 +84,7 @@ class TestExport(unittest.TestCase):
 
     def test_export_all_notifies(self, mock_notify):
         export_all(self.db, self.output)
-        mock_notify.assert_called_once_with("Recap", "Exported 2 meetings")
+        mock_notify.assert_called_once_with("Meetily Exporter", "Exported 2 meetings")
 
     def test_skip_does_not_notify(self, mock_notify):
         export_all(self.db, self.output)
@@ -191,9 +191,9 @@ class TestWatchCursor(unittest.TestCase):
 class TestNotify(unittest.TestCase):
     @patch("main.subprocess.run")
     def test_calls_osascript(self, mock_run):
-        notify("Recap", "Exported 2 meetings")
+        notify("Meetily Exporter", "Exported 2 meetings")
         mock_run.assert_called_once_with(
-            ["osascript", "-e", 'display notification "Exported 2 meetings" with title "Recap"'],
+            ["osascript", "-e", 'display notification "Exported 2 meetings" with title "Meetily Exporter"'],
             capture_output=True,
             timeout=2,
             check=False,
@@ -201,11 +201,11 @@ class TestNotify(unittest.TestCase):
 
     @patch("main.subprocess.run", side_effect=FileNotFoundError)
     def test_ignores_missing_osascript(self, _mock_run):
-        notify("Recap", "test")  # should not raise
+        notify("Meetily Exporter", "test")  # should not raise
 
     @patch("main.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="", timeout=2))
     def test_ignores_timeout(self, _mock_run):
-        notify("Recap", "test")  # should not raise
+        notify("Meetily Exporter", "test")  # should not raise
 
 
 if __name__ == "__main__":

@@ -1,28 +1,28 @@
-# Recap: Meetily Meeting Exporter
+# Meetily Exporter
 
 ## Overview
 
 A standalone Python CLI that reads Meetily's SQLite database and exports meetings as markdown files containing the AI summary and full transcript.
 
-Single file (`recap.py`), zero external dependencies.
+Single file (`main.py`), zero external dependencies.
 
 ## Usage
 
 ```bash
 # Export all meetings with completed summaries
-python recap.py export --output ~/Documents/meetings
+meetily-exporter export
 
 # Export one specific meeting
-python recap.py export --output ~/Documents/meetings --meeting-id meeting-fa7efe8b-c721-4396-8630-20d91fdcd1aa
+meetily-exporter export --meeting-id meeting-fa7efe8b-c721-4396-8630-20d91fdcd1aa
 
 # Re-export, overwriting existing files
-python recap.py export --output ~/Documents/meetings --force
+meetily-exporter export --force
 
 # Watch for new completed summaries, auto-export
-python recap.py watch --output ~/Documents/meetings
+meetily-exporter watch
 
 # Custom DB path / poll interval
-python recap.py watch --output ~/Documents/meetings --db /path/to/db.sqlite --interval 10
+meetily-exporter watch --db /path/to/db.sqlite --interval 10
 ```
 
 ## Output
@@ -105,5 +105,6 @@ ORDER BY audio_start_time ASC
 ## Defaults
 
 - **DB:** `~/Library/Application Support/com.meetily.ai/meeting_minutes.sqlite`
+- **Output:** `~/Documents/MeetilyExporter`
 - **Poll interval:** 30 seconds
 - **Force:** off

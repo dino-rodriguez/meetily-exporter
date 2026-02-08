@@ -8,7 +8,7 @@ import time
 DEFAULT_DB = os.path.expanduser(
     "~/Library/Application Support/com.meetily.ai/meeting_minutes.sqlite"
 )
-DEFAULT_OUTPUT = os.path.expanduser("~/Documents/Recap")
+DEFAULT_OUTPUT = os.path.expanduser("~/Documents/MeetilyExporter")
 DEFAULT_INTERVAL = 30
 SPEAKER_LABELS = {"mic": "You", "system": "Others"}
 
@@ -218,7 +218,7 @@ def export_all(
     print(f"Exported {exported} meeting(s)")
     if exported:
         label = "meeting" if exported == 1 else "meetings"
-        notify("Recap", f"Exported {exported} {label}")
+        notify("Meetily Exporter", f"Exported {exported} {label}")
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -284,7 +284,7 @@ def cmd_watch(args: argparse.Namespace) -> None:
         meetings = get_meetings(db, since=cursor)
         for meeting in meetings:
             if export_meeting(meeting, db, args.output, force=False):
-                notify("Recap", f"Exported: {meeting[1]}")
+                notify("Meetily Exporter", f"Exported: {meeting[1]}")
         if meetings:
             cursor = get_latest_cursor(db)
         db.close()
@@ -292,7 +292,7 @@ def cmd_watch(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Entry point. Parses CLI arguments and dispatches to export or watch."""
-    parser = argparse.ArgumentParser(description="Export Meetily meetings as markdown")
+    parser = argparse.ArgumentParser(prog="meetily-exporter", description="Export Meetily meetings as markdown")
     sub = parser.add_subparsers(dest="command", required=True)
 
     db_arg = {"flags": ["--db"], "help": "Path to Meetily SQLite database"}
