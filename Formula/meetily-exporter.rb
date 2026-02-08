@@ -4,7 +4,7 @@ class MeetilyExporter < Formula
   desc "Export Meetily meetings as markdown"
   homepage "https://github.com/dino-rodriguez/meetily-exporter"
   url "https://github.com/dino-rodriguez/meetily-exporter/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "a7f4a6dae0b5ffcf17abbcbd0e7faa9cdfdb33ff85e3976eba5c64e9a1ed8847"
+  sha256 "6b971ba1e9502b54946eae6818fc6b70b5d52a294799f2cf1009b5308ac957dc"
   license "MIT"
 
   depends_on "python@3.12"
