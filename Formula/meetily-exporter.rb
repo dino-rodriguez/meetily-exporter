@@ -7,7 +7,7 @@ class MeetilyExporter < Formula
   sha256 "a7f4a6dae0b5ffcf17abbcbd0e7faa9cdfdb33ff85e3976eba5c64e9a1ed8847"
   license "MIT"
 
-  depends_on "python@3.13"
+  depends_on "python@3.12"
 
   def install
     virtualenv_install_with_resources
