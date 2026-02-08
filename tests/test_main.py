@@ -82,6 +82,16 @@ class TestExport(unittest.TestCase):
         files = sorted(os.listdir(self.output))
         self.assertEqual(files, ["meeting-aaa.md", "meeting-bbb.md"])
 
+    def test_export_all_notifies(self, mock_notify):
+        export_all(self.db, self.output)
+        mock_notify.assert_called_once_with("Recap", "Exported 2 meetings")
+
+    def test_skip_does_not_notify(self, mock_notify):
+        export_all(self.db, self.output)
+        mock_notify.reset_mock()
+        export_all(self.db, self.output)  # all skipped
+        mock_notify.assert_not_called()
+
     def test_skip_existing(self, _notify):
         export_all(self.db, self.output)
         mtime = os.path.getmtime(os.path.join(self.output, "meeting-aaa.md"))
@@ -181,9 +191,9 @@ class TestWatchCursor(unittest.TestCase):
 class TestNotify(unittest.TestCase):
     @patch("main.subprocess.run")
     def test_calls_osascript(self, mock_run):
-        notify("Recap", "Exported 2 meeting(s)")
+        notify("Recap", "Exported 2 meetings")
         mock_run.assert_called_once_with(
-            ["osascript", "-e", 'display notification "Exported 2 meeting(s)" with title "Recap"'],
+            ["osascript", "-e", 'display notification "Exported 2 meetings" with title "Recap"'],
             capture_output=True,
             timeout=2,
             check=False,

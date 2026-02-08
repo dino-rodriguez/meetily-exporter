@@ -216,7 +216,8 @@ def export_all(
     )
     print(f"Exported {exported} meeting(s)")
     if exported:
-        notify("Recap", f"Exported {exported} meeting(s)")
+        label = "meeting" if exported == 1 else "meetings"
+        notify("Recap", f"Exported {exported} {label}")
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -282,7 +283,7 @@ def cmd_watch(args: argparse.Namespace) -> None:
         meetings = get_meetings(db, since=cursor)
         for meeting in meetings:
             if export_meeting(meeting, db, args.output, force=False):
-                notify("Recap", f"New meeting exported: {meeting[1]}")
+                notify("Recap", f"Exported: {meeting[1]}")
         if meetings:
             cursor = get_latest_cursor(db)
         db.close()
