@@ -12,6 +12,13 @@ A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-So
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap dino-rodriguez/meetily-exporter https://github.com/dino-rodriguez/meetily-exporter
+brew install meetily-exporter
+```
+
 ### pipx
 
 ```bash
@@ -54,21 +61,30 @@ meetily-exporter watch --interval 60   # custom poll interval
 
 Continuously polls for newly completed meetings and exports them. A macOS notification appears when a meeting is exported.
 
-### Options
-
-Both commands accept `--output` and `--db` to override defaults:
+To run the watcher as a persistent background service that starts on login (Homebrew only):
 
 ```bash
-meetily-exporter export --output ~/vault/meetings --db /path/to/db.sqlite
+brew services start meetily-exporter   # start and run on login
+brew services stop meetily-exporter    # stop
+brew services info meetily-exporter    # check status
 ```
+
+### Export options
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--output` | Output directory | `~/Documents/MeetilyExporter` |
 | `--db` | Meetily SQLite database | Meetily's default location |
-| `--meeting-id` | Export a single meeting (export only) | All |
-| `--force` | Overwrite existing files (export only) | Off |
-| `--interval` | Poll interval in seconds (watch only) | 30 |
+| `--meeting-id` | Export a single meeting | All |
+| `--force` | Overwrite existing files | Off |
+
+### Watch options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--output` | Output directory | `~/Documents/MeetilyExporter` |
+| `--db` | Meetily SQLite database | Meetily's default location |
+| `--interval` | Poll interval in seconds | 30 |
 
 ## Output format
 
