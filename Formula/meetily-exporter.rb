@@ -2,8 +2,8 @@ class MeetilyExporter < Formula
   include Language::Python::Virtualenv
 
   desc "Export Meetily meetings as markdown"
-  homepage "https://github.com/anthropics/meetily-exporter"
-  url "https://github.com/anthropics/meetily-exporter/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/dino-rodriguez/meetily-exporter"
+  url "https://github.com/dino-rodriguez/meetily-exporter/archive/refs/tags/v0.1.0.tar.gz"
   sha256 ""
   license "MIT"
 
