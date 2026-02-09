@@ -10,10 +10,6 @@ A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-So
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
-  - [Config](#config)
-  - [Export](#export)
-  - [Watch](#watch)
-  - [Background service](#background-service)
 - [Output format](#output-format)
 
 ## How it works
@@ -60,71 +56,29 @@ uv run meetily-exporter --help
 
 ## Usage
 
-### Config
-
-Set persistent defaults that apply to all commands, including `brew services`:
+Configure where meetings are exported, then start the background service:
 
 ```bash
-meetily-exporter config                              # show current settings
-meetily-exporter config --output ~/Obsidian/Meetings # set output directory
-meetily-exporter config --interval 60                # set poll interval
-```
-
-Settings are stored in `~/.config/meetily-exporter/config.toml`. CLI flags always override config values.
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--output` | Default output directory | `~/Documents/MeetilyExporter` |
-| `--db` | Default Meetily SQLite database | Meetily's default location |
-| `--interval` | Default poll interval in seconds | 30 |
-
-### Export
-
-```bash
-meetily-exporter export                # export all meetings
-meetily-exporter export --force        # re-export, overwriting existing files
-meetily-exporter export --meeting-id <id>  # export a single meeting
-```
-
-Exports all meetings with completed summaries to `~/Documents/MeetilyExporter`. Existing files are skipped unless `--force` is used.
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--output` | Output directory | `~/Documents/MeetilyExporter` |
-| `--db` | Meetily SQLite database | Meetily's default location |
-| `--meeting-id` | Export a single meeting | All |
-| `--force` | Overwrite existing files | Off |
-
-### Watch
-
-```bash
-meetily-exporter watch                 # poll every 30s for new meetings
-meetily-exporter watch --interval 60   # custom poll interval
-```
-
-Continuously polls for newly completed meetings and exports them. A macOS notification appears when a meeting is exported.
-
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--output` | Output directory | `~/Documents/MeetilyExporter` |
-| `--db` | Meetily SQLite database | Meetily's default location |
-| `--interval` | Poll interval in seconds | 30 |
-
-### Background service
-
-For a set-and-forget setup, run the watcher as a background service that starts automatically on login (Homebrew only):
-
-```bash
-meetily-exporter config --output ~/Obsidian/Meetings  # set output directory once
+meetily-exporter config --output ~/Obsidian/Meetings  # set output directory
 brew services start meetily-exporter                   # start and run on login
 ```
 
-New meetings will be exported automatically and a macOS notification will appear for each one.
+That's it — new meetings will be exported automatically and a macOS notification will appear for each one. Settings are stored in `~/.config/meetily-exporter/config.toml`.
 
 ```bash
 brew services info meetily-exporter    # check status
 brew services stop meetily-exporter    # stop
 ```
+
+You can also export manually or run the watcher in the foreground:
+
+```bash
+meetily-exporter export               # one-time export of all meetings
+meetily-exporter export --force       # re-export, overwriting existing files
+meetily-exporter watch                # poll for new meetings in the foreground
+```
+
+Run `meetily-exporter <command> --help` for all available flags.
 
 ## Output format
 
