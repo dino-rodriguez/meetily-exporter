@@ -1,11 +1,13 @@
 import argparse
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 import time
 import tomllib
+from datetime import datetime
 
 DEFAULT_DB = os.path.expanduser(
     "~/Library/Application Support/com.meetily.ai/meeting_minutes.sqlite"
@@ -14,6 +16,109 @@ DEFAULT_OUTPUT = os.path.expanduser("~/Documents/MeetilyExporter")
 DEFAULT_INTERVAL = 30
 CONFIG_PATH = os.path.expanduser("~/.config/meetily-exporter/config.toml")
 SPEAKER_LABELS = {"mic": "You", "system": "Others"}
+_UNSAFE_CHARS = re.compile(r'[/\\:*?"<>|]')
+
+
+def sanitize_title(title: str) -> str:
+    """Remove filesystem-unsafe characters from a meeting title.
+
+    Strips characters that are illegal on common filesystems, collapses
+    double spaces that may result, and truncates to 200 characters.
+    Capitalization, unicode, and internal spacing are preserved.
+
+    Args:
+        title: Raw meeting title.
+
+    Returns:
+        A filesystem-safe string, or empty string if nothing remains.
+    """
+    s = _UNSAFE_CHARS.sub("", title)
+    s = re.sub(r"  +", " ", s)
+    s = s.strip(" .")
+    return s[:200]
+
+
+def read_frontmatter_id(path: str) -> str | None:
+    """Extract the meeting-id from a markdown file's YAML frontmatter.
+
+    Expects frontmatter delimited by ``---`` on the first line. Returns
+    None if the file has no frontmatter or no meeting-id field.
+
+    Args:
+        path: Absolute path to a markdown file.
+
+    Returns:
+        The meeting-id value, or None.
+    """
+    try:
+        with open(path) as f:
+            if f.readline().rstrip("\n") != "---":
+                return None
+            for line in f:
+                if line.rstrip("\n") == "---":
+                    return None
+                if line.startswith("meeting-id:"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        return None
+    return None
+
+
+def build_id_mapping(output_dir: str) -> dict[str, str]:
+    """Scan markdown files and map meeting IDs to filenames.
+
+    Reads the YAML frontmatter of each ``.md`` file in *output_dir* to
+    extract the ``meeting-id`` field.
+
+    Args:
+        output_dir: Directory containing exported markdown files.
+
+    Returns:
+        Dict mapping meeting-id values to filenames (basename only).
+    """
+    mapping: dict[str, str] = {}
+    if not os.path.isdir(output_dir):
+        return mapping
+    for name in os.listdir(output_dir):
+        if not name.endswith(".md"):
+            continue
+        mid = read_frontmatter_id(os.path.join(output_dir, name))
+        if mid:
+            mapping[mid] = name
+    return mapping
+
+
+def meeting_filename(
+    title: str, created_at: str, mid: str, used: set[str]
+) -> str:
+    """Build a unique ``.md`` filename from a meeting title and date.
+
+    Format: ``YYYY-MM-DD HHmm - Title.md``. Falls back to the meeting
+    ID when the title sanitizes to empty. Appends ``(2)``, ``(3)`` etc.
+    to avoid collisions within the current export run.
+
+    Args:
+        title: Raw meeting title.
+        created_at: ISO-format creation timestamp from the database.
+        mid: Meeting ID, used as fallback.
+        used: Set of lowercased filenames already claimed.
+
+    Returns:
+        A unique filename ending in ``.md``.
+    """
+    stem = sanitize_title(title) or mid
+    dt = datetime.fromisoformat(created_at)
+    prefix = dt.strftime("%Y-%m-%d %H%M")
+    base = f"{prefix} - {stem}.md"
+    if base.lower() not in used:
+        return base
+    n = 2
+    while True:
+        candidate = f"{prefix} - {stem} ({n}).md"
+        if candidate.lower() not in used:
+            return candidate
+        n += 1
+
 
 # Row types from SQL queries
 type MeetingRow = tuple[str, str, str, str | None]  # id, title, created_at, result
@@ -182,9 +287,9 @@ def build_markdown(meeting: MeetingRow, transcripts: list[TranscriptRow]) -> str
     Returns:
         The full markdown string ready to write to a file.
     """
-    mid, title, created_at, result_json = meeting
+    mid, _title, created_at, result_json = meeting
 
-    lines = [f"---\ntitle: {title}\nmeeting-id: {mid}\n---\n"]
+    lines = [f"---\nmeeting-id: {mid}\n---\n"]
     lines.append("## Summary\n")
 
     if result_json:
@@ -208,40 +313,66 @@ def build_markdown(meeting: MeetingRow, transcripts: list[TranscriptRow]) -> str
             lines.append(f"{format_time(audio_start)} ({label}) {transcript}")
         else:
             lines.append(f"{format_time(audio_start)} {transcript}")
+        lines.append("")
 
     return "\n".join(lines) + "\n"
 
 
 def export_meeting(
-    meeting: MeetingRow, db: sqlite3.Connection, output_dir: str, force: bool
+    meeting: MeetingRow,
+    db: sqlite3.Connection,
+    output_dir: str,
+    force: bool,
+    id_mapping: dict[str, str],
+    used_filenames: set[str],
 ) -> bool:
     """Export a single meeting to a markdown file.
 
-    Skips writing if the file already exists unless force is True.
+    Uses *id_mapping* (built from frontmatter) to detect previously
+    exported files. Skips writing if already exported unless *force* is
+    True. When force-overwriting a meeting whose title changed, the old
+    file is removed.
 
     Args:
         meeting: A meeting row from get_meetings.
         db: Open SQLite connection for fetching transcripts.
         output_dir: Directory to write the markdown file into.
         force: If True, overwrite existing files.
+        id_mapping: Meeting-ID → filename mapping from existing files.
+        used_filenames: Lowercased filenames already claimed in this run.
 
     Returns:
         True if a file was written, False if skipped.
     """
-    mid = meeting[0]
-    filename = f"{mid}.md"
-    filepath = os.path.join(output_dir, filename)
+    mid, title, created_at = meeting[0], meeting[1], meeting[2]
 
-    if os.path.exists(filepath) and not force:
-        print(f"  skip {filename} (exists)")
+    old_filename = id_mapping.get(mid)
+    if old_filename and not force:
+        print(f"  skip {old_filename} (exists)")
         return False
+
+    # Free the old name so it doesn't cause a false collision
+    if old_filename:
+        used_filenames.discard(old_filename.lower())
+
+    filename = meeting_filename(title, created_at, mid, used_filenames)
+
+    if old_filename and old_filename != filename:
+        old_path = os.path.join(output_dir, old_filename)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+            print(f"  rename {old_filename} -> {filename}")
 
     transcripts = get_transcripts(db, mid)
     md = build_markdown(meeting, transcripts)
 
     os.makedirs(output_dir, exist_ok=True)
+    filepath = os.path.join(output_dir, filename)
     with open(filepath, "w") as f:
         f.write(md)
+
+    used_filenames.add(filename.lower())
+    id_mapping[mid] = filename
 
     print(f"  wrote {filename}")
     return True
@@ -266,9 +397,13 @@ def export_all(
         print("No meetings with completed summaries found.")
         return
 
+    id_mapping = build_id_mapping(output_dir)
+    used_filenames = {name.lower() for name in id_mapping.values()}
+
     print(f"Found {len(meetings)} meeting(s)")
     exported = sum(
-        export_meeting(m, db, output_dir, force) for m in meetings
+        export_meeting(m, db, output_dir, force, id_mapping, used_filenames)
+        for m in meetings
     )
     print(f"Exported {exported} meeting(s)")
     if exported:
@@ -371,10 +506,15 @@ def cmd_watch(args: argparse.Namespace) -> None:
         time.sleep(args.interval)
         db = sqlite3.connect(args.db)
         meetings = get_meetings(db, since=cursor)
-        for meeting in meetings:
-            if export_meeting(meeting, db, args.output, force=False):
-                notify("Meetily Exporter", f"Exported: {meeting[1]}")
         if meetings:
+            id_mapping = build_id_mapping(args.output)
+            used_filenames = {name.lower() for name in id_mapping.values()}
+            for meeting in meetings:
+                if export_meeting(
+                    meeting, db, args.output, force=False,
+                    id_mapping=id_mapping, used_filenames=used_filenames,
+                ):
+                    notify("Meetily Exporter", f"Exported: {meeting[1]}")
             cursor = get_latest_cursor(db)
         db.close()
 

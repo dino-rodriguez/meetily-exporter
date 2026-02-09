@@ -4,6 +4,14 @@
 
 Meetily Exporter is a standalone Python CLI that reads Meetily's SQLite database and exports meetings as markdown files.
 
+## Commands
+
+Use the Makefile for all common tasks:
+
+- `make test` — run tests
+- `make lint` — run linter
+- `make format` — auto-format code
+
 ## Python Style
 
 ### Typing

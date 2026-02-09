@@ -13,13 +13,14 @@ A simple CLI that exports meetings from [Meetily](https://github.com/Zackriya-So
   - [Config](#config)
   - [Export](#export)
   - [Watch](#watch)
+  - [Background service](#background-service)
 - [Output format](#output-format)
 
 ## How it works
 
 [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes) is an open-source, local-first meeting assistant that records audio, transcribes it, and generates AI summaries — all stored in a local SQLite database.
 
-This tool reads that database (read-only) and for each meeting with a completed summary, builds a markdown file containing YAML front matter, the AI summary, and a timestamped transcript with speaker labels.
+This tool reads that database (read-only) and for each meeting with a completed summary, builds a markdown file containing YAML front matter, the AI summary, and a timestamped transcript with speaker labels. Files are date-prefixed with human-readable titles, designed to work well with [Obsidian](https://obsidian.md) and other markdown-based note systems.
 
 ## Requirements
 
@@ -109,23 +110,28 @@ Continuously polls for newly completed meetings and exports them. A macOS notifi
 | `--db` | Meetily SQLite database | Meetily's default location |
 | `--interval` | Poll interval in seconds | 30 |
 
-To run the watcher as a persistent background service that starts on login (Homebrew only):
+### Background service
+
+For a set-and-forget setup, run the watcher as a background service that starts automatically on login (Homebrew only):
 
 ```bash
-brew services start meetily-exporter   # start and run on login
-brew services stop meetily-exporter    # stop
-brew services info meetily-exporter    # check status
+meetily-exporter config --output ~/Obsidian/Meetings  # set output directory once
+brew services start meetily-exporter                   # start and run on login
 ```
 
-Use `meetily-exporter config --output <dir>` to customize where the service writes files.
+New meetings will be exported automatically and a macOS notification will appear for each one.
+
+```bash
+brew services info meetily-exporter    # check status
+brew services stop meetily-exporter    # stop
+```
 
 ## Output format
 
-Each meeting becomes a markdown file named by its meeting ID:
+Each meeting becomes a markdown file named by its date and title (e.g. `2025-01-07 1400 - Design Review.md`):
 
 ```markdown
 ---
-title: Design Review
 meeting-id: meeting-fa7efe8b-c721-4396-8630-20d91fdcd1aa
 ---
 
@@ -142,8 +148,10 @@ The team reviewed the latest mockups for the dashboard redesign...
 ## Transcript
 
 [00:00] (You) Let's look at the mockups for the dashboard
+
 [00:12] (Others) I think option B is the strongest
+
 [00:25] (You) Agreed, let's go with that direction
 ```
 
-The YAML front matter includes the meeting title, which works with the [Obsidian Front Matter Title](https://github.com/snezhig/obsidian-front-matter-title) plugin if you point your output directory to an Obsidian vault.
+Existing files are detected by the `meeting-id` in front matter, so renaming a file won't cause duplicates. Re-exporting with `--force` after a title change in Meetily will rename the file to match.
