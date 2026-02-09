@@ -9,6 +9,10 @@ import time
 import tomllib
 from datetime import datetime
 
+# ---------------------------------------------------------------------------
+# Constants and types
+# ---------------------------------------------------------------------------
+
 DEFAULT_DB = os.path.expanduser(
     "~/Library/Application Support/com.meetily.ai/meeting_minutes.sqlite"
 )
@@ -16,7 +20,176 @@ DEFAULT_OUTPUT = os.path.expanduser("~/Documents/MeetilyExporter")
 DEFAULT_INTERVAL = 30
 CONFIG_PATH = os.path.expanduser("~/.config/meetily-exporter/config.toml")
 SPEAKER_LABELS = {"mic": "You", "system": "Others"}
-_UNSAFE_CHARS = re.compile(r'[/\\:*?"<>|]')
+UNSAFE_CHARS = re.compile(r'[/\\:*?"<>|]')
+
+type MeetingRow = tuple[str, str, str, str | None]  # id, title, created_at, result
+type TranscriptRow = tuple[str, float | None, str, str | None]  # transcript, audio_start, timestamp, speaker
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+def notify(title: str, message: str) -> None:
+    """Show a native macOS notification via osascript.
+
+    Silently ignored if osascript is unavailable or times out.
+
+    Args:
+        title: Notification title.
+        message: Notification body text.
+    """
+    try:
+        subprocess.run(
+            ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
+            capture_output=True,
+            timeout=2,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+
+def load_config(path: str = CONFIG_PATH) -> dict[str, str | int]:
+    """Read the config file and return its contents as a dict.
+
+    Args:
+        path: Path to the TOML config file.
+
+    Returns:
+        Parsed config dict, or empty dict if the file doesn't exist.
+    """
+    if not os.path.exists(path):
+        return {}
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def save_config(config: dict[str, str | int], path: str = CONFIG_PATH) -> None:
+    """Write the config dict to a TOML file.
+
+    Creates the parent directory if it doesn't exist.
+
+    Args:
+        config: Config key-value pairs to write.
+        path: Path to the TOML config file.
+    """
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lines = []
+    for key, value in config.items():
+        if isinstance(value, int):
+            lines.append(f"{key} = {value}")
+        else:
+            lines.append(f'{key} = "{value}"')
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def resolve_args(args: argparse.Namespace) -> None:
+    """Fill in unset CLI args from the config file, then from built-in defaults.
+
+    Modifies args in place. Resolution order: CLI flag > config file > default.
+
+    Args:
+        args: Parsed CLI arguments. None values are treated as "not provided".
+    """
+    config = load_config()
+    defaults = {"output": DEFAULT_OUTPUT, "db": DEFAULT_DB, "interval": DEFAULT_INTERVAL}
+
+    for key, default in defaults.items():
+        if not hasattr(args, key):
+            continue
+        val = getattr(args, key)
+        if val is None:
+            val = config.get(key, default)
+            if isinstance(default, str) and isinstance(val, str):
+                val = os.path.expanduser(val)
+            setattr(args, key, val)
+
+
+# ---------------------------------------------------------------------------
+# Database queries
+# ---------------------------------------------------------------------------
+
+
+def get_meetings(
+    db: sqlite3.Connection,
+    meeting_id: str | None = None,
+    since: str | None = None,
+) -> list[MeetingRow]:
+    """Query meetings that have a completed summary.
+
+    Args:
+        db: Open SQLite connection to the Meetily database.
+        meeting_id: If provided, filter to this single meeting.
+        since: If provided, only return meetings with sp.updated_at after this
+            value. Results are ordered by sp.updated_at ASC so the caller can
+            use the last value as the next cursor.
+
+    Returns:
+        List of meeting rows with id, title, created_at, and summary result JSON.
+    """
+    sql = """
+        SELECT m.id, m.title, m.created_at, sp.result
+        FROM meetings m
+        JOIN summary_processes sp ON m.id = sp.meeting_id
+        WHERE sp.status = 'completed'
+    """
+    params: list[str] = []
+    if meeting_id:
+        sql += " AND m.id = ?"
+        params.append(meeting_id)
+    if since:
+        sql += " AND sp.updated_at > ?"
+        params.append(since)
+    sql += " ORDER BY sp.updated_at ASC"
+    return db.execute(sql, params).fetchall()
+
+
+def get_transcripts(db: sqlite3.Connection, meeting_id: str) -> list[TranscriptRow]:
+    """Fetch all transcript segments for a meeting, ordered by audio time.
+
+    Args:
+        db: Open SQLite connection to the Meetily database.
+        meeting_id: The meeting to fetch transcripts for.
+
+    Returns:
+        List of transcript rows with text, audio start time, timestamp, and speaker.
+    """
+    return db.execute(
+        """
+        SELECT transcript, audio_start_time, timestamp, speaker
+        FROM transcripts
+        WHERE meeting_id = ?
+        ORDER BY audio_start_time ASC
+        """,
+        (meeting_id,),
+    ).fetchall()
+
+
+def get_latest_cursor(db: sqlite3.Connection) -> str | None:
+    """Return the most recent updated_at value for completed summaries.
+
+    Args:
+        db: Open SQLite connection to the Meetily database.
+
+    Returns:
+        The MAX(updated_at) string, or None if no completed summaries exist.
+    """
+    row = db.execute(
+        "SELECT MAX(sp.updated_at) FROM summary_processes sp WHERE sp.status = 'completed'"
+    ).fetchone()
+    return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# Filename helpers
+# ---------------------------------------------------------------------------
 
 
 def sanitize_title(title: str) -> str:
@@ -32,7 +205,7 @@ def sanitize_title(title: str) -> str:
     Returns:
         A filesystem-safe string, or empty string if nothing remains.
     """
-    s = _UNSAFE_CHARS.sub("", title)
+    s = UNSAFE_CHARS.sub("", title)
     s = re.sub(r"  +", " ", s)
     s = s.strip(" .")
     return s[:200]
@@ -120,141 +293,9 @@ def meeting_filename(
         n += 1
 
 
-# Row types from SQL queries
-type MeetingRow = tuple[str, str, str, str | None]  # id, title, created_at, result
-type TranscriptRow = tuple[str, float | None, str, str | None]  # transcript, audio_start, timestamp, speaker
-
-
-def notify(title: str, message: str) -> None:
-    """Show a native macOS notification via osascript.
-
-    Silently ignored if osascript is unavailable or times out.
-
-    Args:
-        title: Notification title.
-        message: Notification body text.
-    """
-    try:
-        subprocess.run(
-            ["osascript", "-e", f'display notification "{message}" with title "{title}"'],
-            capture_output=True,
-            timeout=2,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-
-
-def load_config(path: str = CONFIG_PATH) -> dict[str, str | int]:
-    """Read the config file and return its contents as a dict.
-
-    Args:
-        path: Path to the TOML config file.
-
-    Returns:
-        Parsed config dict, or empty dict if the file doesn't exist.
-    """
-    if not os.path.exists(path):
-        return {}
-    with open(path, "rb") as f:
-        return tomllib.load(f)
-
-
-def save_config(config: dict[str, str | int], path: str = CONFIG_PATH) -> None:
-    """Write the config dict to a TOML file.
-
-    Creates the parent directory if it doesn't exist.
-
-    Args:
-        config: Config key-value pairs to write.
-        path: Path to the TOML config file.
-    """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    lines = []
-    for key, value in config.items():
-        if isinstance(value, int):
-            lines.append(f"{key} = {value}")
-        else:
-            lines.append(f'{key} = "{value}"')
-    with open(path, "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-
-def resolve_args(args: argparse.Namespace) -> None:
-    """Fill in unset CLI args from the config file, then from built-in defaults.
-
-    Modifies args in place. Resolution order: CLI flag > config file > default.
-
-    Args:
-        args: Parsed CLI arguments. None values are treated as "not provided".
-    """
-    config = load_config()
-    defaults = {"output": DEFAULT_OUTPUT, "db": DEFAULT_DB, "interval": DEFAULT_INTERVAL}
-
-    for key, default in defaults.items():
-        if not hasattr(args, key):
-            continue
-        val = getattr(args, key)
-        if val is None:
-            val = config.get(key, default)
-            if isinstance(default, str) and isinstance(val, str):
-                val = os.path.expanduser(val)
-            setattr(args, key, val)
-
-
-def get_meetings(
-    db: sqlite3.Connection,
-    meeting_id: str | None = None,
-    since: str | None = None,
-) -> list[MeetingRow]:
-    """Query meetings that have a completed summary.
-
-    Args:
-        db: Open SQLite connection to the Meetily database.
-        meeting_id: If provided, filter to this single meeting.
-        since: If provided, only return meetings with sp.updated_at after this
-            value. Results are ordered by sp.updated_at ASC so the caller can
-            use the last value as the next cursor.
-
-    Returns:
-        List of meeting rows with id, title, created_at, and summary result JSON.
-    """
-    sql = """
-        SELECT m.id, m.title, m.created_at, sp.result
-        FROM meetings m
-        JOIN summary_processes sp ON m.id = sp.meeting_id
-        WHERE sp.status = 'completed'
-    """
-    params: list[str] = []
-    if meeting_id:
-        sql += " AND m.id = ?"
-        params.append(meeting_id)
-    if since:
-        sql += " AND sp.updated_at > ?"
-        params.append(since)
-    sql += " ORDER BY sp.updated_at ASC"
-    return db.execute(sql, params).fetchall()
-
-
-def get_transcripts(db: sqlite3.Connection, meeting_id: str) -> list[TranscriptRow]:
-    """Fetch all transcript segments for a meeting, ordered by audio time.
-
-    Args:
-        db: Open SQLite connection to the Meetily database.
-        meeting_id: The meeting to fetch transcripts for.
-
-    Returns:
-        List of transcript rows with text, audio start time, timestamp, and speaker.
-    """
-    return db.execute(
-        """
-        SELECT transcript, audio_start_time, timestamp, speaker
-        FROM transcripts
-        WHERE meeting_id = ?
-        ORDER BY audio_start_time ASC
-        """,
-        (meeting_id,),
-    ).fetchall()
+# ---------------------------------------------------------------------------
+# Markdown generation
+# ---------------------------------------------------------------------------
 
 
 def format_time(seconds: float | None) -> str:
@@ -316,6 +357,11 @@ def build_markdown(meeting: MeetingRow, transcripts: list[TranscriptRow]) -> str
         lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
 
 
 def export_meeting(
@@ -411,6 +457,11 @@ def export_all(
         notify("Meetily Exporter", f"Exported {exported} {label}")
 
 
+# ---------------------------------------------------------------------------
+# CLI commands
+# ---------------------------------------------------------------------------
+
+
 def cmd_config(args: argparse.Namespace) -> None:
     """Handle the 'config' subcommand.
 
@@ -459,21 +510,6 @@ def cmd_export(args: argparse.Namespace) -> None:
     db = sqlite3.connect(args.db)
     export_all(db, args.output, args.force, args.meeting_id)
     db.close()
-
-
-def get_latest_cursor(db: sqlite3.Connection) -> str | None:
-    """Return the most recent updated_at value for completed summaries.
-
-    Args:
-        db: Open SQLite connection to the Meetily database.
-
-    Returns:
-        The MAX(updated_at) string, or None if no completed summaries exist.
-    """
-    row = db.execute(
-        "SELECT MAX(sp.updated_at) FROM summary_processes sp WHERE sp.status = 'completed'"
-    ).fetchone()
-    return row[0] if row else None
 
 
 def cmd_watch(args: argparse.Namespace) -> None:
